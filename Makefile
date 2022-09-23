@@ -13,7 +13,7 @@ OUTPUT = .
 
 # Sources
 
-SOURCES = v4l2.c v4l2-camera.c v4l2-bayer-protocol.c $(NAME).c
+SOURCES = v4l2.c v4l2-camera.c v4l2-params.c v4l2-bayer-protocol.c $(NAME).c
 OBJECTS = $(SOURCES:.c=.o)
 DEPS = $(SOURCES:.c=.d)
 
@@ -32,22 +32,27 @@ BUILD_DIRS = $(sort $(dir $(BUILD_BINARY) $(BUILD_OBJECTS)))
 OUTPUT_BINARY = $(OUTPUT)/$(NAME)
 OUTPUT_DIRS = $(sort $(dir $(OUTPUT_BINARY)))
 
-all: client server standalone
+all: client server standalone params
 
 server:
 	@make -s NAME=v4l2-bayer-server build
 
-HONY: build
+.PHONY: server
 
 client:
 	@make -s NAME=v4l2-bayer-client build
 
-HONY: build
+.PHONY: client
 
 standalone:
 	@make -s NAME=v4l2-bayer-standalone build
 
-HONY: build
+.PHONY: standalone
+
+params:
+	@make -s NAME=v4l2-isp-params build
+
+.PHONY: params
 
 build: $(OUTPUT_BINARY)
 
@@ -75,7 +80,7 @@ $(OUTPUT_BINARY): $(BUILD_BINARY) | $(OUTPUT_DIRS)
 clean:
 	@echo " CLEAN"
 	@rm -rf $(foreach object,$(basename $(BUILD_OBJECTS)),$(object)*) $(basename $(BUILD_BINARY))*
-	@rm -rf v4l2-bayer-standalone v4l2-bayer-client v4l2-bayer-server
+	@rm -rf v4l2-bayer-standalone v4l2-bayer-client v4l2-bayer-server v4l2-isp-params
 
 .PHONY: distclean
 distclean: clean
