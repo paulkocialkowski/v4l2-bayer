@@ -249,6 +249,7 @@ int v4l2_buffers_destroy(int video_fd, unsigned int type, unsigned int memory)
 }
 
 int v4l2_buffers_capabilities_probe(int video_fd, unsigned int type,
+				    unsigned int memory,
 				    unsigned int *capabilities)
 {
 	struct v4l2_create_buffers create_buffers = { 0 };
@@ -258,7 +259,7 @@ int v4l2_buffers_capabilities_probe(int video_fd, unsigned int type,
 		return -EINVAL;
 
 	create_buffers.format.type = type;
-	create_buffers.memory = V4L2_MEMORY_MMAP;
+	create_buffers.memory = memory;
 	create_buffers.count = 0;
 
 	ret = ioctl(video_fd, VIDIOC_CREATE_BUFS, &create_buffers);
@@ -407,11 +408,8 @@ void v4l2_buffer_timestamp_get(struct v4l2_buffer *buffer, uint64_t *timestamp)
 }
 
 void v4l2_buffer_setup_base(struct v4l2_buffer *buffer, unsigned int type,
-			    unsigned int memory, unsigned int index,
-			    struct v4l2_plane *planes,
-			    unsigned int planes_count)
+			    unsigned int memory, unsigned int index)
 {
-	bool mplane_check;
 
 	if (!buffer)
 		return;
@@ -422,11 +420,32 @@ void v4l2_buffer_setup_base(struct v4l2_buffer *buffer, unsigned int type,
 	buffer->memory = memory;
 	buffer->index = index;
 
+}
+
+void v4l2_buffer_setup_planes(struct v4l2_buffer *buffer, unsigned int type,
+			      struct v4l2_plane *planes,
+			      unsigned int planes_count)
+{
+	bool mplane_check;
+
+	if (!buffer)
+		return;
+
 	mplane_check = v4l2_type_mplane_check(type);
 	if (mplane_check && planes) {
 		buffer->m.planes = planes;
 		buffer->length = planes_count;
 	}
+}
+
+void v4l2_buffer_setup_userptr(struct v4l2_buffer *buffer, void *pointer,
+			       unsigned int length)
+{
+	if (!buffer)
+		return;
+
+	buffer->m.userptr = (long unsigned int)pointer;
+	buffer->length = length;
 }
 
 int v4l2_pixel_format_enum(int video_fd, unsigned int type, unsigned int index,
@@ -519,6 +538,16 @@ int v4l2_format_get(int video_fd, struct v4l2_format *format)
 	return 0;
 }
 
+void v4l2_format_setup_base(struct v4l2_format *format, unsigned int type)
+{
+	if (!format)
+		return;
+
+	memset(format, 0, sizeof(*format));
+
+	format->type = type;
+}
+
 void v4l2_format_setup_pixel(struct v4l2_format *format, unsigned int type,
 			     unsigned int width, unsigned int height,
 			     unsigned int pixel_format)
@@ -542,6 +571,44 @@ void v4l2_format_setup_pixel(struct v4l2_format *format, unsigned int type,
 		format->fmt.pix.height = height;
 		format->fmt.pix.pixelformat = pixel_format;
 	}
+}
+
+void v4l2_parm_setup_base(struct v4l2_streamparm *streamparm, unsigned int type)
+{
+	if (!streamparm)
+		return;
+
+	memset(streamparm, 0, sizeof(*streamparm));
+
+	streamparm->type = type;
+}
+
+int v4l2_parm_set(int video_fd, struct v4l2_streamparm *streamparm)
+{
+	int ret;
+
+	if (!streamparm)
+		return -EINVAL;
+
+	ret = ioctl(video_fd, VIDIOC_S_PARM, streamparm);
+	if (ret)
+		return -errno;
+
+	return 0;
+}
+
+int v4l2_parm_get(int video_fd, struct v4l2_streamparm *streamparm)
+{
+	int ret;
+
+	if (!streamparm)
+		return -EINVAL;
+
+	ret = ioctl(video_fd, VIDIOC_G_PARM, streamparm);
+	if (ret)
+		return -errno;
+
+	return 0;
 }
 
 int v4l2_capabilities_probe(int video_fd, unsigned int *capabilities,

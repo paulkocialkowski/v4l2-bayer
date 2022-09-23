@@ -3,8 +3,8 @@
  * Copyright (C) 2020 Bootlin
  */
 
-#ifndef _V4L2_camera_H_
-#define _V4L2_camera_H_
+#ifndef _V4L2_CAMERA_H_
+#define _V4L2_CAMERA_H_
 
 #include <linux/videodev2.h>
 
@@ -46,7 +46,8 @@ struct v4l2_camera {
 	unsigned int capture_type;
 	unsigned int capture_capabilities;
 	struct v4l2_format capture_format;
-	struct v4l2_camera_buffer capture_buffers[3];
+	struct v4l2_camera_buffer *capture_buffers;
+	unsigned int capture_buffers_preload_count;
 	unsigned int capture_buffers_count;
 	unsigned int capture_buffers_index;
 	unsigned int capture_buffer_ready_index;
@@ -63,7 +64,7 @@ int v4l2_camera_setup_dimensions(struct v4l2_camera *camera,
 int v4l2_camera_setup_format(struct v4l2_camera *camera, uint32_t format);
 int v4l2_camera_setup(struct v4l2_camera *camera);
 int v4l2_camera_teardown(struct v4l2_camera *camera);
-int v4l2_camera_open(struct v4l2_camera *camera);
+int v4l2_camera_open(struct v4l2_camera *camera, const char *driver);
 void v4l2_camera_close(struct v4l2_camera *camera);
 
 #endif

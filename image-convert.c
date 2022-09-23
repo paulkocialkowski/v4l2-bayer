@@ -274,14 +274,121 @@ int bayer_8_convert(uint8_t *dst, uint8_t *img, uint32_t length, uint32_t w,
 	return(0);
 }
 
-int bayer_convert(uint8_t *dst, uint8_t *img, uint32_t length, uint32_t w,
+static inline uint8_t byte_range(float v)
+{
+	if (v < 0.)
+		return 0;
+	else if (v > 255.)
+		return 255;
+	else
+		return (uint8_t)v;
+}
+
+int nv12_convert(void *luma, void *chroma, void *rgb, unsigned int width, unsigned int height, unsigned int stride)
+{
+	unsigned int x, y;
+
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			unsigned int xc, yc;
+			unsigned int ol, oc;
+			uint32_t *rgbx;
+			float value;
+			uint8_t vy, vu, vv;
+			uint8_t vr, vg, vb;
+
+			rgbx = (uint32_t *)((uint8_t *)rgb + stride * y + x * 4);
+
+			ol = y * width + x;
+			vy = *((uint8_t *)luma + ol);
+
+			xc = x / 2;
+			yc = y / 2;
+			oc = yc * width + xc * 2;
+			vu = *((uint8_t *)chroma + oc);
+			vv = *((uint8_t *)chroma + oc + 1);
+
+			value = (float)vy + 1.13983 * ((float)vv - 128.0);
+			vr = byte_range(value);
+			value = (float)vy - 0.39466 * ((float)vu - 128.0) - 0.58060 * ((float)vv - 128.0);
+			vg = byte_range(value);
+			value = (float)vy + 2.03211 * ((float)vu - 128.0);
+			vb = byte_range(value);
+
+			*rgbx = vb | (vg << 8) | (vr << 16) | (0 << 24);
+		}
+	}
+
+	return 0;
+}
+
+/* offsets: Y0 Y1 U V */
+int yuyv_convert(void *packed, void *rgb, unsigned int width, unsigned int height, unsigned int stride, unsigned int *offsets)
+{
+	unsigned int x, y;
+
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++) {
+			unsigned int xc, yc;
+			unsigned int o, oy, ou, ov;
+			uint32_t *rgbx;
+			float value;
+			uint8_t vy, vu, vv;
+			uint8_t vr, vg, vb;
+			unsigned int xa, xf;
+
+			rgbx = (uint32_t *)((uint8_t *)rgb + stride * y + x * 4);
+
+			xa = x / 2;
+
+			o = y * width * 2 + xa * 4;
+
+			if (x & 1)
+				oy = o + offsets[1];
+			else
+				oy = o + offsets[0];
+
+			ou = o + offsets[2];
+			ov = o + offsets[3];
+
+			vy = *((uint8_t *)packed + oy);
+			vu = *((uint8_t *)packed + ou);
+			vv = *((uint8_t *)packed + ov);
+
+			value = (float)vy + 1.13983 * ((float)vv - 128.0);
+			vr = byte_range(value);
+			value = (float)vy - 0.39466 * ((float)vu - 128.0) - 0.58060 * ((float)vv - 128.0);
+			vg = byte_range(value);
+			value = (float)vy + 2.03211 * ((float)vu - 128.0);
+			vb = byte_range(value);
+
+			*rgbx = vb | (vg << 8) | (vr << 16) | (0 << 24);
+		}
+	}
+
+	return 0;
+}
+
+int image_convert(uint8_t *dst, uint8_t *img, uint32_t length, uint32_t w,
 		  uint32_t h, unsigned int format)
 {
+	int offsets_uyvy[] = { 1, 3, 0, 2 };
+	int offsets_yuyv[] = { 0, 2, 1, 3 };
+
 	switch (format) {
 	case V4L2_PIX_FMT_SBGGR8:
+	case V4L2_PIX_FMT_SRGGB8:
 		return bayer_8_convert(dst, img, length, w, h, format);
 	case V4L2_PIX_FMT_SBGGR10:
+	case V4L2_PIX_FMT_SRGGB10:
 		return bayer_10_convert(dst, img, length, w, h);
+	case V4L2_PIX_FMT_NV12:
+	case V4L2_PIX_FMT_NV21:
+		return nv12_convert(img, img + w*h, dst, w, h, w*4);
+	case V4L2_PIX_FMT_UYVY:
+		return yuyv_convert(img, dst, w, h, w * 4, offsets_uyvy);
+	case V4L2_PIX_FMT_YUYV:
+		return yuyv_convert(img, dst, w, h, w * 4, offsets_yuyv);
 	default:
 		return -EINVAL;
 	}

@@ -53,6 +53,7 @@ int v4l2_buffers_request(int video_fd, unsigned int type, unsigned int memory,
 			 unsigned int count);
 int v4l2_buffers_destroy(int video_fd, unsigned int type, unsigned int memory);
 int v4l2_buffers_capabilities_probe(int video_fd, unsigned int type,
+				    unsigned int memory,
 				    unsigned int *capabilities);
 
 int v4l2_buffer_query(int video_fd, struct v4l2_buffer *buffer);
@@ -68,9 +69,12 @@ void v4l2_buffer_request_detach(struct v4l2_buffer *buffer);
 void v4l2_buffer_timestamp_set(struct v4l2_buffer *buffer, uint64_t timestamp);
 void v4l2_buffer_timestamp_get(struct v4l2_buffer *buffer, uint64_t *timestamp);
 void v4l2_buffer_setup_base(struct v4l2_buffer *buffer, unsigned int type,
-			    unsigned int memory, unsigned int index,
-			    struct v4l2_plane *planes,
-			    unsigned int planes_count);
+			    unsigned int memory, unsigned int index);
+void v4l2_buffer_setup_planes(struct v4l2_buffer *buffer, unsigned int type,
+			      struct v4l2_plane *planes,
+			      unsigned int planes_count);
+void v4l2_buffer_setup_userptr(struct v4l2_buffer *buffer, void *pointer,
+			       unsigned int length);
 
 int v4l2_pixel_format_enum(int video_fd, unsigned int type, unsigned int index,
 			   unsigned int *pixel_format, char *description);
@@ -80,9 +84,15 @@ bool v4l2_pixel_format_check(int video_fd, unsigned int type,
 int v4l2_format_try(int video_fd, struct v4l2_format *format);
 int v4l2_format_set(int video_fd, struct v4l2_format *format);
 int v4l2_format_get(int video_fd, struct v4l2_format *format);
+void v4l2_format_setup_base(struct v4l2_format *format, unsigned int type);
 void v4l2_format_setup_pixel(struct v4l2_format *format, unsigned int type,
 			     unsigned int width, unsigned int height,
 			     unsigned int pixel_format);
+
+void v4l2_parm_setup_base(struct v4l2_streamparm *streamparm,
+			  unsigned int type);
+int v4l2_parm_set(int video_fd, struct v4l2_streamparm *streamparm);
+int v4l2_parm_get(int video_fd, struct v4l2_streamparm *streamparm);
 
 int v4l2_capabilities_probe(int video_fd, unsigned int *capabilities,
 			    char *driver, char *card);

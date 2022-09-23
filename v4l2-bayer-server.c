@@ -277,7 +277,7 @@ static int stream_start(struct v4l2_bayer_server *server)
 
 		ret = v4l2_camera_setup(camera);
 		if (ret)
-			return ret;		
+			return ret;
 	}
 
 	if (!camera->started) {
@@ -389,15 +389,40 @@ int main(int argc, char *argv[])
 		.server_fd = -1,
 		.client_fd = -1,
 	};
+	char *driver = NULL;
+	unsigned int buffers_count = 2;
+	unsigned int buffers_preload_count = 1;
+	int option = 0;
 	int ret;
+
+	while (option != -1) {
+		option = getopt(argc, argv, "d:c:p:s");
+		if (option < 0)
+			break;
+
+		switch (option) {
+		case 'd':
+			driver = strdup(optarg);
+			break;
+		case 'c':
+			buffers_count = atoi(optarg);
+			break;
+		case 'p':
+			buffers_preload_count = atoi(optarg);
+			break;
+		}
+	}
 
 	ret = v4l2_bayer_server_open(&server);
 	if (ret)
 		goto error;
 
-	ret = v4l2_camera_open(&server.camera);
+	ret = v4l2_camera_open(&server.camera, driver);
 	if (ret)
 		goto error;
+
+	server.camera.capture_buffers_preload_count = buffers_preload_count;
+	server.camera.capture_buffers_count = buffers_count;
 
 	while (server.run)
 		v4l2_bayer_server_poll(&server);
@@ -420,8 +445,14 @@ int main(int argc, char *argv[])
 	if (ret)
 		goto error;
 
+	if (driver)
+		free(driver);
+
 	return 0;
 
 error:
+	if (driver)
+		free(driver);
+
 	return 1;
 }

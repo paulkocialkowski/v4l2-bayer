@@ -55,23 +55,18 @@ int v4l2_camera_run(struct v4l2_camera *camera)
 	capture_index = camera->capture_buffers_index;
 	capture_buffer = &camera->capture_buffers[capture_index];
 
-	printf("QBUF %d/%d\n", capture_index, capture_buffer->buffer.index);
+	printf("queue-buffer: %d/%d\n", capture_buffer->buffer.index,
+	       capture_index);
 	ret = v4l2_buffer_queue(camera->video_fd, &capture_buffer->buffer);
 	if (ret)
 		return ret;
 
 	ret = v4l2_poll(camera->video_fd, &timeout);
 	if (ret <= 0)
-		printf("poll returned %d\n", ret);
+		printf("poll: %d\n", ret);
 
-	/* Two buffers back, offset by the enqueue in camera start. */
-	capture_index = (camera->capture_buffers_index +
-			 camera->capture_buffers_count - 2) %
-			camera->capture_buffers_count;
-	capture_buffer = &camera->capture_buffers[capture_index];
-
-	v4l2_buffer_setup_base(&buffer, camera->capture_type, camera->memory, 0,
-			       NULL, 0);
+	v4l2_buffer_setup_base(&buffer, camera->capture_type, camera->memory,
+			       0);
 	
 	do {
 		ret = v4l2_buffer_dequeue(camera->video_fd,
@@ -80,13 +75,9 @@ int v4l2_camera_run(struct v4l2_camera *camera)
 			return ret;
 	} while (ret == -EAGAIN);
 
-	camera->capture_buffer_ready_index = capture_index;
+	camera->capture_buffer_ready_index = buffer.index;
 
-	printf("DQBUF %d\n", buffer.index);
-
-	if (buffer.index != capture_index)
-		printf("Dequeued buffer is not at expected index: %u/%u\n",
-		       capture_buffer->buffer.index, capture_index);
+	printf("dequeue-buffer: %d\n", buffer.index);
 
 	return 0;
 }
@@ -94,35 +85,35 @@ int v4l2_camera_run(struct v4l2_camera *camera)
 int v4l2_camera_start(struct v4l2_camera *camera)
 {
 	struct v4l2_camera_buffer *capture_buffer;
+	unsigned int buffers_preload_count =
+		camera->capture_buffers_preload_count;
 	unsigned int capture_index;
+	unsigned int count;
 	int ret;
 
 	if (!camera || camera->started)
 		return -EINVAL;
 
-	/* Queue two buffers in advance. */
+	if (buffers_preload_count > camera->capture_buffers_count) {
+		fprintf(stderr,
+			"Asked to preload more buffers than available!\n");
+		return -EINVAL;
+	}
 
-	capture_index = camera->capture_buffers_index;
-	capture_buffer = &camera->capture_buffers[capture_index];
+	/* Queue preload buffers in advance. */
 
-	printf("QBUF %d\n", capture_index);
-	ret = v4l2_buffer_queue(camera->video_fd, &capture_buffer->buffer);
-	if (ret)
-		return ret;
+	for (count = 0; count < buffers_preload_count; count++) {
+		capture_index = camera->capture_buffers_index;
+		capture_buffer = &camera->capture_buffers[capture_index];
 
-	camera->capture_buffers_index++;
-	camera->capture_buffers_index %= camera->capture_buffers_count;
+		printf("preload-buffer: %d\n", capture_index);
+		ret = v4l2_buffer_queue(camera->video_fd, &capture_buffer->buffer);
+		if (ret)
+			return ret;
 
-	capture_index = camera->capture_buffers_index;
-	capture_buffer = &camera->capture_buffers[capture_index];
-
-	printf("QBUF %d\n", capture_index);
-	ret = v4l2_buffer_queue(camera->video_fd, &capture_buffer->buffer);
-	if (ret)
-		return ret;
-
-	camera->capture_buffers_index++;
-	camera->capture_buffers_index %= camera->capture_buffers_count;
+		camera->capture_buffers_index++;
+		camera->capture_buffers_index %= camera->capture_buffers_count;
+	}
 
 	ret = v4l2_stream_on(camera->video_fd, camera->capture_type);
 	if (ret)
@@ -148,14 +139,14 @@ int v4l2_camera_stop(struct v4l2_camera *camera)
 		struct v4l2_buffer buffer;
 
 		v4l2_buffer_setup_base(&buffer, camera->capture_type,
-				       camera->memory, 0, NULL, 0);
+				       camera->memory, 0);
 
 		ret = v4l2_buffer_dequeue(camera->video_fd,
 					  &buffer);
 		if (ret && ret != -EAGAIN)
 			break;
 		else
-			printf("DQBUF %d\n", buffer.index);
+			printf("unload-buffer: %d\n", buffer.index);
 	} while (ret == -EAGAIN);
 
 	camera->started = false;
@@ -174,8 +165,9 @@ int v4l2_camera_buffer_setup(struct v4l2_camera_buffer *buffer,
 
 	camera = buffer->camera;
 
-	v4l2_buffer_setup_base(&buffer->buffer, type, camera->memory, index,
-			       buffer->planes, buffer->planes_count);
+	v4l2_buffer_setup_base(&buffer->buffer, type, camera->memory, index);
+	v4l2_buffer_setup_planes(&buffer->buffer, type, buffer->planes,
+				 buffer->planes_count);
 
 	ret = v4l2_buffer_query(camera->video_fd, &buffer->buffer);
 	if (ret) {
@@ -328,7 +320,9 @@ int v4l2_camera_setup(struct v4l2_camera *camera)
 
 	/* Capture buffers */
 
-	buffers_count = ARRAY_SIZE(camera->capture_buffers);
+	buffers_count = camera->capture_buffers_count;
+	camera->capture_buffers =
+		calloc(buffers_count, sizeof(*camera->capture_buffers));
 
 	ret = v4l2_buffers_request(camera->video_fd, camera->capture_type,
 				   camera->memory, buffers_count);
@@ -355,15 +349,13 @@ int v4l2_camera_setup(struct v4l2_camera *camera)
 		}
 	}
 
-	camera->capture_buffers_count = buffers_count;
-
 	camera->up = true;
 
 	ret = 0;
 	goto complete;
 
 error:
-	buffers_count = ARRAY_SIZE(camera->capture_buffers);
+	buffers_count = camera->capture_buffers_count;
 
 	for (i = 0; i < buffers_count; i++)
 		v4l2_camera_buffer_teardown(&camera->capture_buffers[i]);
@@ -384,7 +376,7 @@ int v4l2_camera_teardown(struct v4l2_camera *camera)
 	if (!camera || !camera->up)
 		return -EINVAL;
 
-	buffers_count = ARRAY_SIZE(camera->capture_buffers);
+	buffers_count = camera->capture_buffers_count;
 
 	for (i = 0; i < buffers_count; i++)
 		v4l2_camera_buffer_teardown(&camera->capture_buffers[i]);
@@ -392,13 +384,16 @@ int v4l2_camera_teardown(struct v4l2_camera *camera)
 	v4l2_buffers_destroy(camera->video_fd, camera->capture_type,
 			     camera->memory);
 
+	free(camera->capture_buffers);
+	camera->capture_buffers = NULL;
+
 	camera->up = false;
 
 	return 0;
 }
 
 static int video_device_probe(struct v4l2_camera *camera, struct udev *udev,
-			      struct udev_device *device)
+			      struct udev_device *device, const char *driver)
 {
 	const char *path = udev_device_get_devnode(device);
 	bool check, mplane_check;
@@ -421,6 +416,11 @@ static int video_device_probe(struct v4l2_camera *camera, struct udev *udev,
 
 	printf("Probed driver %s card %s\n", camera->driver, camera->card);
 
+	if (driver && strcmp(driver, camera->driver)) {
+		ret = -EINVAL;
+		goto error;
+	}
+
 	mplane_check = v4l2_capabilities_check(camera->capabilities,
 					       V4L2_CAP_VIDEO_CAPTURE_MPLANE);
 	check = v4l2_capabilities_check(camera->capabilities,
@@ -436,6 +436,7 @@ static int video_device_probe(struct v4l2_camera *camera, struct udev *udev,
 	}
 
 	ret = v4l2_buffers_capabilities_probe(video_fd, camera->capture_type,
+					      V4L2_MEMORY_MMAP,
 					      &camera->capture_capabilities);
 	if (ret)
 		goto error;
@@ -452,7 +453,7 @@ error:
 	return ret;
 }
 
-int v4l2_camera_open(struct v4l2_camera *camera)
+int v4l2_camera_open(struct v4l2_camera *camera, const char *driver)
 {
 	struct udev *udev = NULL;
 	struct udev_enumerate *enumerate = NULL;
@@ -490,7 +491,7 @@ int v4l2_camera_open(struct v4l2_camera *camera)
 		if (!device)
 			continue;
 
-		ret = video_device_probe(camera, udev, device);
+		ret = video_device_probe(camera, udev, device, driver);
 
 		udev_device_unref(device);
 

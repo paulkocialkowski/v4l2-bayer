@@ -18,6 +18,8 @@
 
 #include <v4l2-bayer-protocol.h>
 
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+
 struct v4l2_bayer_client {
 	int fd;
 
@@ -29,6 +31,11 @@ struct v4l2_bayer_client {
 	unsigned int rgb_length;
 
 	int dump_fd;
+};
+
+struct v4l2_bayer_format {
+	char *name;
+	unsigned int format;
 };
 
 int v4l2_bayer_client_open(struct v4l2_bayer_client *client, char *host_name)
@@ -222,7 +229,7 @@ static int stream_stop(struct v4l2_bayer_client *client)
 	return 0;
 }
 
-#include "bayer.c"
+#include "image-convert.c"
 
 void image_write(char *path, void *rgb_data, unsigned int width, unsigned int height)
 {
@@ -237,6 +244,25 @@ void image_write(char *path, void *rgb_data, unsigned int width, unsigned int he
 	cairo_surface_destroy(surface);
 }
 
+struct v4l2_bayer_format formats[] = {
+	/* Bayer */
+	{ "bggr8",	V4L2_PIX_FMT_SBGGR8 },
+	{ "rggb8",	V4L2_PIX_FMT_SRGGB8 },
+	{ "bggr10",	V4L2_PIX_FMT_SBGGR10 },
+	{ "rggb10",	V4L2_PIX_FMT_SRGGB10 },
+	/* YUV420 */
+	{ "nv12",	V4L2_PIX_FMT_NV12 },
+	{ "nv21",	V4L2_PIX_FMT_NV21 },
+	{ "yuv420",	V4L2_PIX_FMT_YUV420 },
+	{ "yvu420",	V4L2_PIX_FMT_YVU420 },
+	/* YUV422 */
+	{ "yuyv",	V4L2_PIX_FMT_YUYV },
+	{ "uyvy",	V4L2_PIX_FMT_UYVY },
+	{ "nv16",	V4L2_PIX_FMT_NV16 },
+	{ "nv61",	V4L2_PIX_FMT_NV61 },
+	{ "yuv422p",	V4L2_PIX_FMT_YUV422P },
+};
+
 int main(int argc, char *argv[])
 {
 	struct v4l2_bayer_client client = {
@@ -246,6 +272,7 @@ int main(int argc, char *argv[])
 	char *host_name = strdup("localhost");
 	unsigned int width, height, format;
 	unsigned int command;
+	unsigned int i;
 	int option = 0;
 	bool dump = false;
 	int ret;
@@ -268,19 +295,19 @@ int main(int argc, char *argv[])
 			height = atoi(optarg);
 			break;
 		case 'f':
-			switch (atoi(optarg)) {
-			case 8:
-				format = V4L2_PIX_FMT_SBGGR8;
-				break;
-			case 10:
-				format = V4L2_PIX_FMT_SBGGR10;
-				break;
-			default:
-				goto error;
+			for (i = 0; i < ARRAY_SIZE(formats); i++) {
+				if (!strcmp(optarg, formats[i].name)) {
+					format = formats[i].format;
+					break;
+				}
 			}
+
+			if (i == ARRAY_SIZE(formats))
+				goto error;
 			break;
 		case 'r':
 			host_name = strdup(optarg);
+			break;
 		}
 	}
 
@@ -304,10 +331,28 @@ int main(int argc, char *argv[])
 	switch (command) {
 	case V4L2_BAYER_CAPTURE_REQUEST:
 		switch (format) {
+		/* Bayer */
 		case V4L2_PIX_FMT_SBGGR8:
+		case V4L2_PIX_FMT_SRGGB8:
 			client.raw_length = width * height;
 			break;
 		case V4L2_PIX_FMT_SBGGR10:
+		case V4L2_PIX_FMT_SRGGB10:
+			client.raw_length = width * height * 2;
+			break;
+		/* YUV420 */
+		case V4L2_PIX_FMT_NV12:
+		case V4L2_PIX_FMT_NV21:
+		case V4L2_PIX_FMT_YUV420:
+		case V4L2_PIX_FMT_YVU420:
+			client.raw_length = 3 * width * height / 2;
+			break;
+		/* YUV422 */
+		case V4L2_PIX_FMT_YUYV:
+		case V4L2_PIX_FMT_UYVY:
+		case V4L2_PIX_FMT_NV16:
+		case V4L2_PIX_FMT_NV61:
+		case V4L2_PIX_FMT_YUV422P:
 			client.raw_length = width * height * 2;
 			break;
 		default:
@@ -338,10 +383,10 @@ int main(int argc, char *argv[])
 
 		printf("Frame fragments read done!\n");
 
-		bayer_convert(client.rgb_buffer, client.raw_buffer, client.raw_length,
+		image_convert(client.rgb_buffer, client.raw_buffer, client.raw_length,
 			      width, height, format);
 
-		printf("Bayer convert done!\n");
+		printf("Image convert done!\n");
 
 		image_write("frame.png", client.rgb_buffer, width, height);
 

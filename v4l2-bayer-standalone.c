@@ -355,7 +355,7 @@ int main(int argc, char *argv[])
 
 	format = V4L2_PIX_FMT_SBGGR8;
 
-	ret = v4l2_camera_open(camera);
+	ret = v4l2_camera_open(camera, NULL);
 	if (ret)
 		goto error;
 
